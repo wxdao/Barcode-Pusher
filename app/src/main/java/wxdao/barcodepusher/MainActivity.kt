@@ -82,14 +82,17 @@ class MainActivity : AppCompatActivity() {
 
         (findViewById(R.id.textView3) as TextView).setOnClickListener {
             view ->
-            val editor = sharedPref!!.edit()
-            editor.putString("history", "")
-            editor.commit()
-            updateHistory()
+            AlertDialog.Builder(this).setPositiveButton("Yes", { dialogInterface: DialogInterface, i: Int ->
+                val editor = sharedPref!!.edit()
+                editor.putString("history", "")
+                editor.commit()
+                updateHistory()
+            }).setNegativeButton("No", null).setMessage("Clear history?").show()
         }
 
         listView?.setOnItemClickListener({ adapterView: AdapterView<*>, view1: View, i: Int, l: Long ->
             clipboard?.primaryClip = ClipData.newPlainText("Captured content", (view1.findViewById(R.id.item_contentTextView) as TextView).text.toString())
+            Toast.makeText(this, "Copied to Clipboard", Toast.LENGTH_SHORT).show()
         })
     }
 

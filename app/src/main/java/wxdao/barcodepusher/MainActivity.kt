@@ -1,5 +1,6 @@
 package wxdao.barcodepusher
 
+import android.app.ProgressDialog
 import android.content.*
 import android.os.Bundle
 import android.os.Handler
@@ -70,7 +71,7 @@ class MainActivity : AppCompatActivity() {
             dialogBuilder.setCancelable(false)
             dialogBuilder.setView(input)
             dialogBuilder.setPositiveButton("OK", { dialogInterface: DialogInterface, i: Int ->
-                pushData(remoteEdit!!.text.toString(), input.text.toString())
+                pushData(remoteEdit!!.text.toString(), input.text.toString(), (findViewById(R.id.checkBox) as CheckBox).isChecked)
                 dialogInterface.dismiss()
             })
             dialogBuilder.setNegativeButton("Cancel", { dialogInterface: DialogInterface, i: Int ->
@@ -90,10 +91,17 @@ class MainActivity : AppCompatActivity() {
             }).setNegativeButton("No", null).setMessage("Clear history?").show()
         }
 
-        listView?.setOnItemClickListener({ adapterView: AdapterView<*>, view1: View, i: Int, l: Long ->
+        listView?.setOnItemClickListener { adapterView: AdapterView<*>, view1: View, i: Int, l: Long ->
             clipboard?.primaryClip = ClipData.newPlainText("Captured content", (view1.findViewById(R.id.item_contentTextView) as TextView).text.toString())
             Toast.makeText(this, "Copied to Clipboard", Toast.LENGTH_SHORT).show()
-        })
+        }
+
+        listView?.setOnItemLongClickListener { adapterView, view, i, l ->
+            AlertDialog.Builder(this).setMessage("Push/Re-push it?").setPositiveButton("Yes", { dialogInterface: DialogInterface, i: Int ->
+                pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
+            }).setNegativeButton("No", null).show()
+            true
+        }
     }
 
     override fun onResume() {
@@ -109,13 +117,13 @@ class MainActivity : AppCompatActivity() {
         val intentResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         intentResult?.let {
             it.contents?.let {
-                pushData(remoteEdit!!.text.toString(), it)
+                pushData(remoteEdit!!.text.toString(), it, (findViewById(R.id.checkBox) as CheckBox).isChecked)
             }
         }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        val item = menu.add(0, 0, 0, "Additional Info")
+        menu.add(0, 0, 0, "Additional Info")
         return super.onCreateOptionsMenu(menu)
     }
 
@@ -143,10 +151,17 @@ class MainActivity : AppCompatActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    fun pushData(remote: String, content: String) {
+    fun pushData(remote: String, content: String, toPush: Boolean) {
         val handler = Handler()
-        if ((findViewById(R.id.checkBox) as CheckBox).isChecked) {
+        val dialog = ProgressDialog(this)
+        dialog.setTitle("Network")
+        dialog.setMessage("Pushing")
+        dialog.setCancelable(true)
+        if (toPush) {
             Thread({
+                handler.post {
+                    dialog.show()
+                }
                 try {
                     val client = OkHttpClient()
                     val body = FormBody.Builder()
@@ -155,36 +170,36 @@ class MainActivity : AppCompatActivity() {
                             .build()
                     val request = Request.Builder().url(remote).post(body).build()
                     val response = client.newCall(request).execute()
+                    response.body().close()
                     handler.post {
-                        val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
-                        history.item.add(HistoryItem(remote + " : " + response.code().toString(), content))
-                        val editor = sharedPref!!.edit()
-                        editor.putString("history", gson!!.toJson(history))
-                        editor.commit()
-                        updateHistory()
+                        pushItem(content, remote + " : " + response.code().toString())
                     }
                 } catch (e: Exception) {
                     Log.e("", "", e)
                     handler.post {
-                        val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
-                        history.item.add(HistoryItem(remote + " : ERROR", content))
-                        val editor = sharedPref!!.edit()
-                        editor.putString("history", gson!!.toJson(history))
-                        editor.commit()
-                        updateHistory()
+                        pushItem(content, remote + " : ERROR")
                     }
+                }
+                handler.post {
+                    dialog.dismiss()
                 }
             }).start()
         } else {
-            val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
-            history.item.add(HistoryItem("Not pushed", content))
-            val editor = sharedPref!!.edit()
-            editor.putString("history", gson!!.toJson(history))
-            editor.commit()
-            updateHistory()
+            pushItem(content, "Not pushed")
         }
     }
 
+    @Synchronized
+    fun pushItem(content: String, remoteInfo: String) {
+        val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
+        history.item.add(HistoryItem(remoteInfo, content))
+        val editor = sharedPref!!.edit()
+        editor.putString("history", gson!!.toJson(history))
+        editor.commit()
+        updateHistory()
+    }
+
+    @Synchronized
     fun updateHistory() {
         val list = LinkedList<HashMap<String, String>>()
         val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java)

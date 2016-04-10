@@ -157,6 +157,8 @@ class MainActivity : AppCompatActivity() {
         dialog.setTitle("Network")
         dialog.setMessage("Pushing")
         dialog.setCancelable(true)
+        val uuid = UUID.randomUUID().toString()
+        val timestamp = (System.currentTimeMillis() / 1000L).toLong()
         if (toPush) {
             Thread({
                 handler.post {
@@ -167,17 +169,19 @@ class MainActivity : AppCompatActivity() {
                     val body = FormBody.Builder()
                             .add("content", content)
                             .add("additional", sharedPref!!.getString("additional", ""))
+                            .add("timestamp", timestamp.toString())
+                            .add("uuid", uuid)
                             .build()
                     val request = Request.Builder().url(remote).post(body).build()
                     val response = client.newCall(request).execute()
                     response.body().close()
                     handler.post {
-                        pushItem(content, remote + " : " + response.code().toString())
+                        pushItem(content, remote + " : " + response.code().toString(), uuid, timestamp)
                     }
                 } catch (e: Exception) {
                     Log.e("", "", e)
                     handler.post {
-                        pushItem(content, remote + " : ERROR")
+                        pushItem(content, remote + " : ERROR", uuid, timestamp)
                     }
                 }
                 handler.post {
@@ -185,14 +189,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }).start()
         } else {
-            pushItem(content, "Not pushed")
+            pushItem(content, "Not pushed", uuid, timestamp)
         }
     }
 
     @Synchronized
-    fun pushItem(content: String, remoteInfo: String) {
+    fun pushItem(content: String, remoteInfo: String, uuid: String, timestamp: Long) {
         val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
-        history.item.add(HistoryItem(remoteInfo, content))
+        history.item.add(HistoryItem(remoteInfo, content, uuid, timestamp))
         val editor = sharedPref!!.edit()
         editor.putString("history", gson!!.toJson(history))
         editor.commit()
@@ -207,9 +211,10 @@ class MainActivity : AppCompatActivity() {
             val map = HashMap<String, String>()
             map.put("remote", i.remote)
             map.put("content", i.content)
+            map.put("date", Date(i.timestamp * 1000L).toString())
             list.addFirst(map)
         }
-        val adapter = SimpleAdapter(this, list, R.layout.history_list_item, listOf<String>("remote", "content").toTypedArray(), listOf<Int>(R.id.item_remoteTextView, R.id.item_contentTextView).toIntArray())
+        val adapter = SimpleAdapter(this, list, R.layout.history_list_item, listOf<String>("remote", "content", "date").toTypedArray(), listOf<Int>(R.id.item_remoteTextView, R.id.item_contentTextView, R.id.item_dateTextView).toIntArray())
         listView?.adapter = adapter
     }
 }

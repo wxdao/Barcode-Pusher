@@ -2,6 +2,9 @@ package wxdao.barcodepusher
 
 import android.app.ProgressDialog
 import android.content.*
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.Matrix
 import android.os.Bundle
 import android.os.Handler
 import android.support.v7.app.AlertDialog
@@ -9,12 +12,15 @@ import android.support.v7.app.AppCompatActivity
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.widget.*
 import com.google.gson.Gson
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.MultiFormatWriter
 import com.google.zxing.integration.android.IntentIntegrator
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -31,6 +37,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getMetrics(metrics);
 
         clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
@@ -67,7 +76,7 @@ class MainActivity : AppCompatActivity() {
             val input = EditText(this)
             input.inputType = (InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
 
-            val dialogBuilder = AlertDialog.Builder(this)
+            val dialogBuilder = AlertDialog.Builder(this).setTitle("Manual Input")
             dialogBuilder.setCancelable(false)
             dialogBuilder.setView(input)
             dialogBuilder.setPositiveButton("OK", { dialogInterface: DialogInterface, i: Int ->
@@ -88,7 +97,7 @@ class MainActivity : AppCompatActivity() {
                 editor.putString("history", "")
                 editor.commit()
                 updateHistory()
-            }).setNegativeButton("No", null).setMessage("Clear history?").show()
+            }).setNegativeButton("No", null).setMessage("Clear history?").setTitle("Confirm").show()
         }
 
         listView?.setOnItemClickListener { adapterView: AdapterView<*>, view1: View, i: Int, l: Long ->
@@ -97,11 +106,82 @@ class MainActivity : AppCompatActivity() {
         }
 
         listView?.setOnItemLongClickListener { adapterView, view, i, l ->
-            AlertDialog.Builder(this).setMessage("Push/Re-push it?").setPositiveButton("Yes", { dialogInterface: DialogInterface, i: Int ->
-                pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
-            }).setNegativeButton("No", null).show()
+            AlertDialog.Builder(this).setTitle("Actions").setItems(arrayListOf("Push / Re-push", "Delete", "Share").toTypedArray(), object : DialogInterface.OnClickListener {
+                override fun onClick(dialog: DialogInterface?, which: Int) {
+                    when (which) {
+                        0 -> {
+                            pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
+                        }
+                        1 -> {
+                            deleteItem((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString())
+                        }
+                        2 -> {
+                            val shareView = layoutInflater.inflate(R.layout.share_layout, null)
+                            val imageView = shareView.findViewById(R.id.shareImageView) as ImageView
+                            val textView = shareView.findViewById(R.id.shareContentDisplayTextView) as TextView
+                            val spinnerView = shareView.findViewById(R.id.shareCodeTypeSpinner) as Spinner
+
+                            val content = (view.findViewById(R.id.item_contentTextView) as TextView).text.toString()
+                            textView.text = content
+                            imageView.contentDescription = content
+
+                            val codeTypes = listOf("QR Code", "Aztec", "Code 128")
+                            val adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, codeTypes)
+                            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                            spinnerView.adapter = adapter
+                            spinnerView.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                                override fun onNothingSelected(parent: AdapterView<*>?) {
+                                    spinnerView.setSelection(0, true)
+                                }
+
+                                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                                    try {
+                                        val writer = MultiFormatWriter()
+                                        var width = Math.min(metrics.heightPixels, metrics.widthPixels) * 6 / 7
+                                        var height = Math.min(metrics.heightPixels, metrics.widthPixels) * 6 / 7
+                                        val result = writer.encode(content,
+                                                when (position) {
+                                                    0 -> {
+                                                        BarcodeFormat.QR_CODE
+                                                    }
+                                                    1 -> {
+                                                        BarcodeFormat.AZTEC
+                                                    }
+                                                    2 -> {
+                                                        height = width * 2 / 6
+                                                        BarcodeFormat.CODE_128
+                                                    }
+                                                    else -> {
+                                                        BarcodeFormat.QR_CODE
+                                                    }
+                                                }, width, height)
+                                        val w = result.width
+                                        val h = result.height
+                                        val pixels = IntArray(w * h)
+                                        for (y in 0..(h - 1)) {
+                                            val offset = y * w
+                                            for (x in 0..(w - 1)) {
+                                                pixels[offset + x] = if (result.get(x, y)) Color.BLACK else Color.WHITE
+                                            }
+                                        }
+                                        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                                        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+                                        imageView.setImageBitmap(bitmap)
+                                    } catch (e: Exception) {
+                                        Log.e("", "", e)
+                                    }
+                                }
+
+                            }
+                            AlertDialog.Builder(this@MainActivity).setView(shareView).setTitle("Share").show()
+                            spinnerView.setSelection(0, true)
+                        }
+                    }
+                }
+            }).show()
             true
         }
+
     }
 
     override fun onResume() {
@@ -133,7 +213,7 @@ class MainActivity : AppCompatActivity() {
             input.inputType = (InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
             input.setText(sharedPref!!.getString("additional", ""))
 
-            val dialogBuilder = AlertDialog.Builder(this)
+            val dialogBuilder = AlertDialog.Builder(this).setTitle("Additional Information")
             dialogBuilder.setCancelable(false)
             dialogBuilder.setView(input)
             dialogBuilder.setPositiveButton("OK", { dialogInterface: DialogInterface, i: Int ->
@@ -194,6 +274,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Synchronized
+    fun deleteItem(uuid: String) {
+        val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
+        history.item.removeAll { ho: HistoryItem ->
+            if (ho.uuid == uuid) {
+                true
+            } else {
+                false
+            }
+        }
+        val editor = sharedPref!!.edit()
+        editor.putString("history", gson!!.toJson(history))
+        editor.commit()
+        updateHistory()
+    }
+
+    @Synchronized
     fun pushItem(content: String, remoteInfo: String, uuid: String, timestamp: Long) {
         val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
         history.item.add(HistoryItem(remoteInfo, content, uuid, timestamp))
@@ -212,9 +308,10 @@ class MainActivity : AppCompatActivity() {
             map.put("remote", i.remote)
             map.put("content", i.content)
             map.put("date", Date(i.timestamp * 1000L).toString())
+            map.put("uuid", i.uuid)
             list.addFirst(map)
         }
-        val adapter = SimpleAdapter(this, list, R.layout.history_list_item, listOf<String>("remote", "content", "date").toTypedArray(), listOf<Int>(R.id.item_remoteTextView, R.id.item_contentTextView, R.id.item_dateTextView).toIntArray())
+        val adapter = SimpleAdapter(this, list, R.layout.history_list_item, listOf<String>("remote", "content", "date", "uuid").toTypedArray(), listOf<Int>(R.id.item_remoteTextView, R.id.item_contentTextView, R.id.item_dateTextView, R.id.item_uuidTextView).toIntArray())
         listView?.adapter = adapter
     }
 }

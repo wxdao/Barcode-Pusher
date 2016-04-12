@@ -3,8 +3,10 @@ package wxdao.barcodepusher
 import android.app.ProgressDialog
 import android.content.*
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Matrix
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.support.v7.app.AlertDialog
@@ -19,12 +21,12 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.*
 import com.google.gson.Gson
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.MultiFormatWriter
+import com.google.zxing.*
+import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.integration.android.IntentIntegrator
-import okhttp3.FormBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import okhttp3.*
+import java.io.File
+import java.io.InputStream
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
@@ -33,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     var listView: ListView? = null
     var gson: Gson? = null
     var clipboard: ClipboardManager? = null
+
+    val FILE_CHOOSE_REQUEST_CODE = 0xf001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +73,14 @@ class MainActivity : AppCompatActivity() {
             val integrator = IntentIntegrator(this)
             integrator.captureActivity = PortraitCaptureActivity::class.java
             integrator.initiateScan()
+        }
+
+        (findViewById(R.id.fromFile) as Button).setOnClickListener {
+            view ->
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            intent.addCategory(Intent.CATEGORY_OPENABLE)
+            intent.type = "image/*"
+            startActivityForResult(intent, FILE_CHOOSE_REQUEST_CODE)
         }
 
         (findViewById(R.id.manual) as Button).setOnClickListener {
@@ -113,7 +125,11 @@ class MainActivity : AppCompatActivity() {
                             pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
                         }
                         1 -> {
-                            deleteItem((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString())
+                            AlertDialog.Builder(this@MainActivity).setMessage("Push?").setPositiveButton("Yes", DialogInterface.OnClickListener { dialogInterface, i ->
+                                deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), true)
+                            }).setNegativeButton("No", DialogInterface.OnClickListener { dialogInterface, i ->
+                                deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), false)
+                            }).show()
                         }
                         2 -> {
                             val shareView = layoutInflater.inflate(R.layout.share_layout, null)
@@ -192,7 +208,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
 
         val intentResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         intentResult?.let {
@@ -200,6 +215,26 @@ class MainActivity : AppCompatActivity() {
                 pushData(remoteEdit!!.text.toString(), it, (findViewById(R.id.checkBox) as CheckBox).isChecked)
             }
         }
+        when (requestCode) {
+            FILE_CHOOSE_REQUEST_CODE -> {
+                if (resultCode == RESULT_OK) {
+                    val uri = data!!.data
+                    val bmp = BitmapFactory.decodeStream(contentResolver.openInputStream(uri))
+                    val decoder = MultiFormatReader()
+                    val pixels = IntArray(bmp.width * bmp.height)
+                    bmp.getPixels(pixels, 0, bmp.width, 0, 0, bmp.width, bmp.height);
+                    try {
+                        val result = decoder.decodeWithState(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bmp.width, bmp.height, pixels))))
+                        val text = result.text
+                        pushData(remoteEdit!!.text.toString(), text, (findViewById(R.id.checkBox) as CheckBox).isChecked)
+                    } catch (e: Exception) {
+                        AlertDialog.Builder(this).setMessage("Content not found").show()
+                    }
+                }
+            }
+        }
+
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -231,6 +266,7 @@ class MainActivity : AppCompatActivity() {
         return super.onOptionsItemSelected(item)
     }
 
+    @Synchronized
     fun pushData(remote: String, content: String, toPush: Boolean) {
         val handler = Handler()
         val dialog = ProgressDialog(this)
@@ -274,19 +310,58 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Synchronized
-    fun deleteItem(uuid: String) {
-        val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
-        history.item.removeAll { ho: HistoryItem ->
-            if (ho.uuid == uuid) {
-                true
-            } else {
-                false
+    fun deleteData(uuid: String, remote: String, toPush: Boolean) {
+        val handler = Handler()
+        val deleteLocal = fun() {
+            val history = gson!!.fromJson(sharedPref!!.getString("history", null), HistoryObject::class.java) ?: HistoryObject()
+            history.item.removeAll { ho: HistoryItem ->
+                if (ho.uuid == uuid) {
+                    true
+                } else {
+                    false
+                }
             }
+            val editor = sharedPref!!.edit()
+            editor.putString("history", gson!!.toJson(history))
+            editor.commit()
+            updateHistory()
         }
-        val editor = sharedPref!!.edit()
-        editor.putString("history", gson!!.toJson(history))
-        editor.commit()
-        updateHistory()
+        val dialog = ProgressDialog(this)
+        dialog.setTitle("Network")
+        dialog.setMessage("Pushing")
+        dialog.setCancelable(true)
+        if (toPush) {
+            Thread({
+                handler.post {
+                    dialog.show()
+                }
+                try {
+                    val client = OkHttpClient()
+                    val request = Request.Builder().url(remote).delete(RequestBody.create(MediaType.parse("text/plain"), uuid)).build()
+                    val response = client.newCall(request).execute()
+                    if (response.code() == 200) {
+                        handler.post {
+                            deleteLocal()
+                        }
+                    } else {
+                        handler.post {
+                            AlertDialog.Builder(this).setTitle("Network").setMessage("Rejected by remote").show()
+                        }
+                    }
+                    response.body().close()
+                } catch (e: Exception) {
+                    Log.e("", "", e)
+                    handler.post {
+                        AlertDialog.Builder(this).setTitle("Network").setMessage("Failed to push").show()
+                    }
+                }
+                handler.post {
+                    dialog.dismiss()
+                }
+            }).start()
+        } else {
+            deleteLocal()
+        }
     }
 
     @Synchronized

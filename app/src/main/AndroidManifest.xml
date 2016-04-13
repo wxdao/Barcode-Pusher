@@ -28,7 +28,7 @@
             android:screenOrientation="portrait" />
         <activity
             android:name=".LargeImageActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
     </application>

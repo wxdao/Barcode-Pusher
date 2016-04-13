@@ -1,6 +1,7 @@
 package wxdao.barcodepusher
 
 import android.app.Activity
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -17,11 +18,11 @@ class LargeImageActivity : Activity() {
             view ->
             this.finish()
         }
+
+        displayImage()
     }
 
-    override fun onResume() {
-        super.onResume()
-
+    fun displayImage() {
         val metrics = DisplayMetrics()
         windowManager.defaultDisplay.getMetrics(metrics);
 
@@ -33,5 +34,11 @@ class LargeImageActivity : Activity() {
         val height = Math.min(maxHeight.toFloat(), bitmap.height * (maxWidth.toFloat() / bitmap.width.toFloat()))
         val width = bitmap.width.toFloat() * (height.toFloat() / bitmap.height.toFloat())
         (findViewById(R.id.largeImageView) as ImageView).setImageBitmap(Bitmap.createScaledBitmap(bitmap, width.toInt(), height.toInt(), false))
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration?) {
+        super.onConfigurationChanged(newConfig)
+
+        displayImage()
     }
 }

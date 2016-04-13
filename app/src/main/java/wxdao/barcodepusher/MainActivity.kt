@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
                             textView.text = content
                             imageView.contentDescription = content
 
-                            val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "Code 128")
+                            val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "PDF 417", "Code 128")
                             val adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, codeTypes)
                             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                             spinnerView.adapter = adapter
@@ -167,6 +167,9 @@ class MainActivity : AppCompatActivity() {
                                                         BarcodeFormat.DATA_MATRIX
                                                     }
                                                     3 -> {
+                                                        BarcodeFormat.PDF_417
+                                                    }
+                                                    4 -> {
                                                         height = width * 2 / 6
                                                         BarcodeFormat.CODE_128
                                                     }
@@ -186,7 +189,7 @@ class MainActivity : AppCompatActivity() {
                                         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                                         bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
                                         val dstBitmap =
-                                                if (position == 2 && w != h) {
+                                                if ((position == 2 || position == 3) && w != h) {
                                                     Bitmap.createScaledBitmap(bitmap, width, (width.toFloat() * (h.toFloat() / w.toFloat())).toInt(), false)
                                                 } else {
                                                     Bitmap.createScaledBitmap(bitmap, width, height, false)

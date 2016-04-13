@@ -13,6 +13,10 @@ class LargeImageActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_large_image)
 
+        (findViewById(R.id.largeImageView) as ImageView).setOnClickListener {
+            view ->
+            this.finish()
+        }
     }
 
     override fun onResume() {

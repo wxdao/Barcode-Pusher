@@ -7,9 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.drawable.BitmapDrawable
-import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -34,7 +32,6 @@ import okhttp3.*
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
@@ -126,128 +123,126 @@ class MainActivity : AppCompatActivity() {
         }
 
         listView?.setOnItemLongClickListener { adapterView, view, i, l ->
-            AlertDialog.Builder(this).setTitle("Actions").setItems(arrayOf("Push / Re-push", "Delete", "Share"), object : DialogInterface.OnClickListener {
-                override fun onClick(dialog: DialogInterface?, which: Int) {
-                    when (which) {
-                        0 -> {
-                            pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
-                        }
-                        1 -> {
-                            AlertDialog.Builder(this@MainActivity).setMessage("Push?").setPositiveButton("Yes", DialogInterface.OnClickListener { dialogInterface, i ->
-                                deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), true)
-                            }).setNegativeButton("No", DialogInterface.OnClickListener { dialogInterface, i ->
-                                deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), false)
-                            }).show()
-                        }
-                        2 -> {
-                            val shareView = layoutInflater.inflate(R.layout.share_layout, null)
-                            val imageView = shareView.findViewById(R.id.shareImageView) as ImageView
-                            val textView = shareView.findViewById(R.id.shareContentDisplayTextView) as TextView
-                            val spinnerView = shareView.findViewById(R.id.shareCodeTypeSpinner) as Spinner
+            AlertDialog.Builder(this).setTitle("Actions").setItems(arrayOf("Push / Re-push", "Delete", "Share")) { dialog, which ->
+                when (which) {
+                    0 -> {
+                        pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
+                    }
+                    1 -> {
+                        AlertDialog.Builder(this@MainActivity).setMessage("Push?").setPositiveButton("Yes", { dialogInterface, i ->
+                            deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), true)
+                        }).setNegativeButton("No", { dialogInterface, i ->
+                            deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), false)
+                        }).show()
+                    }
+                    2 -> {
+                        val shareView = layoutInflater.inflate(R.layout.share_layout, null)
+                        val imageView = shareView.findViewById(R.id.shareImageView) as ImageView
+                        val textView = shareView.findViewById(R.id.shareContentDisplayTextView) as TextView
+                        val spinnerView = shareView.findViewById(R.id.shareCodeTypeSpinner) as Spinner
 
-                            textView.movementMethod = ScrollingMovementMethod.getInstance()
+                        textView.movementMethod = ScrollingMovementMethod.getInstance()
 
-                            val content = (view.findViewById(R.id.item_contentTextView) as TextView).text.toString()
-                            textView.text = content
-                            imageView.contentDescription = content
-                            imageView.isLongClickable = true
-                            imageView.setOnLongClickListener { view ->
+                        val content = (view.findViewById(R.id.item_contentTextView) as TextView).text.toString()
+                        textView.text = content
+                        imageView.contentDescription = content
+                        imageView.isLongClickable = true
+                        imageView.setOnLongClickListener { view ->
+                            try {
+                                verifyStoragePermissions()
+                                val bitmap = (imageView.drawable as BitmapDrawable).bitmap
+                                val root = File(Environment.getExternalStorageDirectory(), "barcode_share")
+                                root.mkdirs()
+                                val file = File(root, (System.currentTimeMillis()).toString() + ".png")
+                                val stream = FileOutputStream(file)
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                                stream.flush()
+                                stream.close()
+                                Toast.makeText(this@MainActivity, "Image saved to " + file.absolutePath, Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
+                                Log.e("", "", e)
+                            }
+                            true
+                        }
+
+                        imageView.setOnClickListener { view ->
+                            val intent = Intent(this@MainActivity, LargeImageActivity::class.java)
+                            val bitmap = (imageView.drawable as BitmapDrawable).bitmap
+                            val stream = ByteArrayOutputStream()
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                            stream.flush()
+                            intent.putExtra("image", stream.toByteArray())
+                            stream.close()
+                            startActivity(intent)
+                        }
+
+                        val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "PDF 417", "Code 128")
+                        val adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, codeTypes)
+                        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                        spinnerView.adapter = adapter
+                        spinnerView.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                            override fun onNothingSelected(parent: AdapterView<*>?) {
+                                spinnerView.setSelection(0, true)
+                            }
+
+                            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                                 try {
-                                    verifyStoragePermissions()
-                                    val bitmap = (imageView.drawable as BitmapDrawable).bitmap
-                                    val root = File(Environment.getExternalStorageDirectory(), "barcode_share")
-                                    root.mkdirs()
-                                    val file = File(root, (System.currentTimeMillis()).toString() + ".png")
-                                    val stream = FileOutputStream(file)
-                                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-                                    stream.flush()
-                                    stream.close()
-                                    Toast.makeText(this@MainActivity, "Image saved to " + file.absolutePath, Toast.LENGTH_SHORT).show()
+                                    val writer = MultiFormatWriter()
+                                    var width = Math.min(metrics.heightPixels, metrics.widthPixels) * 7 / 8
+                                    var height = Math.min(metrics.heightPixels, metrics.widthPixels) * 7 / 8
+                                    val result = writer.encode(content,
+                                            when (position) {
+                                                0 -> {
+                                                    BarcodeFormat.QR_CODE
+                                                }
+                                                1 -> {
+                                                    BarcodeFormat.AZTEC
+                                                }
+                                                2 -> {
+                                                    BarcodeFormat.DATA_MATRIX
+                                                }
+                                                3 -> {
+                                                    BarcodeFormat.PDF_417
+                                                }
+                                                4 -> {
+                                                    height = width * 2 / 6
+                                                    BarcodeFormat.CODE_128
+                                                }
+                                                else -> {
+                                                    BarcodeFormat.QR_CODE
+                                                }
+                                            }, width, height)
+                                    val w = result.width
+                                    val h = result.height
+                                    val pixels = IntArray(w * h)
+                                    for (y in 0..(h - 1)) {
+                                        val offset = y * w
+                                        for (x in 0..(w - 1)) {
+                                            pixels[offset + x] = if (result.get(x, y)) Color.BLACK else Color.WHITE
+                                        }
+                                    }
+                                    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                                    bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+                                    val dstBitmap =
+                                            if ((position == 2 || position == 3) && w != h) {
+                                                Bitmap.createScaledBitmap(bitmap, width, (width.toFloat() * (h.toFloat() / w.toFloat())).toInt(), false)
+                                            } else {
+                                                Bitmap.createScaledBitmap(bitmap, width, height, false)
+                                            }
+                                    imageView.setImageBitmap(dstBitmap)
                                 } catch (e: Exception) {
                                     Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
                                     Log.e("", "", e)
                                 }
-                                true
                             }
 
-                            imageView.setOnClickListener { view ->
-                                val intent = Intent(this@MainActivity, LargeImageActivity::class.java)
-                                val bitmap = (imageView.drawable as BitmapDrawable).bitmap
-                                val stream = ByteArrayOutputStream()
-                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-                                stream.flush()
-                                intent.putExtra("image", stream.toByteArray())
-                                stream.close()
-                                startActivity(intent)
-                            }
-
-                            val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "PDF 417", "Code 128")
-                            val adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, codeTypes)
-                            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                            spinnerView.adapter = adapter
-                            spinnerView.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                                override fun onNothingSelected(parent: AdapterView<*>?) {
-                                    spinnerView.setSelection(0, true)
-                                }
-
-                                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                                    try {
-                                        val writer = MultiFormatWriter()
-                                        var width = Math.min(metrics.heightPixels, metrics.widthPixels) * 7 / 8
-                                        var height = Math.min(metrics.heightPixels, metrics.widthPixels) * 7 / 8
-                                        val result = writer.encode(content,
-                                                when (position) {
-                                                    0 -> {
-                                                        BarcodeFormat.QR_CODE
-                                                    }
-                                                    1 -> {
-                                                        BarcodeFormat.AZTEC
-                                                    }
-                                                    2 -> {
-                                                        BarcodeFormat.DATA_MATRIX
-                                                    }
-                                                    3 -> {
-                                                        BarcodeFormat.PDF_417
-                                                    }
-                                                    4 -> {
-                                                        height = width * 2 / 6
-                                                        BarcodeFormat.CODE_128
-                                                    }
-                                                    else -> {
-                                                        BarcodeFormat.QR_CODE
-                                                    }
-                                                }, width, height)
-                                        val w = result.width
-                                        val h = result.height
-                                        val pixels = IntArray(w * h)
-                                        for (y in 0..(h - 1)) {
-                                            val offset = y * w
-                                            for (x in 0..(w - 1)) {
-                                                pixels[offset + x] = if (result.get(x, y)) Color.BLACK else Color.WHITE
-                                            }
-                                        }
-                                        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                                        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
-                                        val dstBitmap =
-                                                if ((position == 2 || position == 3) && w != h) {
-                                                    Bitmap.createScaledBitmap(bitmap, width, (width.toFloat() * (h.toFloat() / w.toFloat())).toInt(), false)
-                                                } else {
-                                                    Bitmap.createScaledBitmap(bitmap, width, height, false)
-                                                }
-                                        imageView.setImageBitmap(dstBitmap)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
-                                        Log.e("", "", e)
-                                    }
-                                }
-
-                            }
-                            AlertDialog.Builder(this@MainActivity).setView(shareView).setTitle("Share").show()
-                            spinnerView.setSelection(0, true)
                         }
+                        AlertDialog.Builder(this@MainActivity).setView(shareView).setTitle("Share").show()
+                        spinnerView.setSelection(0, true)
                     }
                 }
-            }).show()
+            }.show()
             true
         }
 
@@ -441,7 +436,7 @@ class MainActivity : AppCompatActivity() {
             map.put("uuid", i.uuid)
             list.addFirst(map)
         }
-        val adapter = SimpleAdapter(this, list, R.layout.history_list_item, listOf<String>("remote", "content", "date", "uuid").toTypedArray(), listOf<Int>(R.id.item_remoteTextView, R.id.item_contentTextView, R.id.item_dateTextView, R.id.item_uuidTextView).toIntArray())
+        val adapter = SimpleAdapter(this, list, R.layout.history_list_item, arrayOf("remote", "content", "date", "uuid"), arrayOf(R.id.item_remoteTextView, R.id.item_contentTextView, R.id.item_dateTextView, R.id.item_uuidTextView).toIntArray())
         listView?.adapter = adapter
     }
 

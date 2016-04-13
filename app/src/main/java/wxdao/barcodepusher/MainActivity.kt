@@ -19,6 +19,7 @@ import android.support.v7.app.AppCompatActivity
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.text.method.ScrollingMovementMethod
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Menu
@@ -30,6 +31,7 @@ import com.google.zxing.*
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.integration.android.IntentIntegrator
 import okhttp3.*
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -143,29 +145,40 @@ class MainActivity : AppCompatActivity() {
                             val textView = shareView.findViewById(R.id.shareContentDisplayTextView) as TextView
                             val spinnerView = shareView.findViewById(R.id.shareCodeTypeSpinner) as Spinner
 
+                            textView.movementMethod = ScrollingMovementMethod.getInstance()
+
                             val content = (view.findViewById(R.id.item_contentTextView) as TextView).text.toString()
                             textView.text = content
                             imageView.contentDescription = content
                             imageView.isLongClickable = true
                             imageView.setOnLongClickListener { view ->
-                                if (view is ImageView) {
-                                    try {
-                                        verifyStoragePermissions()
-                                        val bitmap = (view.drawable as BitmapDrawable).bitmap
-                                        val root = File(Environment.getExternalStorageDirectory(), "barcode_share")
-                                        root.mkdirs()
-                                        val file = File(root, (System.currentTimeMillis()).toString() + ".png")
-                                        val stream = FileOutputStream(file)
-                                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-                                        stream.flush()
-                                        stream.close()
-                                        Toast.makeText(this@MainActivity, "Image saved to " + file.absolutePath, Toast.LENGTH_SHORT).show()
-                                    } catch (e: Exception) {
-                                        Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
-                                        Log.e("", "", e)
-                                    }
+                                try {
+                                    verifyStoragePermissions()
+                                    val bitmap = (imageView.drawable as BitmapDrawable).bitmap
+                                    val root = File(Environment.getExternalStorageDirectory(), "barcode_share")
+                                    root.mkdirs()
+                                    val file = File(root, (System.currentTimeMillis()).toString() + ".png")
+                                    val stream = FileOutputStream(file)
+                                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                                    stream.flush()
+                                    stream.close()
+                                    Toast.makeText(this@MainActivity, "Image saved to " + file.absolutePath, Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
+                                    Log.e("", "", e)
                                 }
                                 true
+                            }
+
+                            imageView.setOnClickListener { view ->
+                                val intent = Intent(this@MainActivity, LargeImageActivity::class.java)
+                                val bitmap = (imageView.drawable as BitmapDrawable).bitmap
+                                val stream = ByteArrayOutputStream()
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                                stream.flush()
+                                intent.putExtra("image", stream.toByteArray())
+                                stream.close()
+                                startActivity(intent)
                             }
 
                             val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "PDF 417", "Code 128")

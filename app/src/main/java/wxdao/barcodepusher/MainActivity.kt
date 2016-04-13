@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
                             textView.text = content
                             imageView.contentDescription = content
 
-                            val codeTypes = listOf("QR Code", "Aztec", "Code 128")
+                            val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "Code 128")
                             val adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, codeTypes)
                             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                             spinnerView.adapter = adapter
@@ -153,8 +153,8 @@ class MainActivity : AppCompatActivity() {
                                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                                     try {
                                         val writer = MultiFormatWriter()
-                                        var width = Math.min(metrics.heightPixels, metrics.widthPixels) * 6 / 7
-                                        var height = Math.min(metrics.heightPixels, metrics.widthPixels) * 6 / 7
+                                        var width = Math.min(metrics.heightPixels, metrics.widthPixels) * 7 / 8
+                                        var height = Math.min(metrics.heightPixels, metrics.widthPixels) * 7 / 8
                                         val result = writer.encode(content,
                                                 when (position) {
                                                     0 -> {
@@ -164,6 +164,9 @@ class MainActivity : AppCompatActivity() {
                                                         BarcodeFormat.AZTEC
                                                     }
                                                     2 -> {
+                                                        BarcodeFormat.DATA_MATRIX
+                                                    }
+                                                    3 -> {
                                                         height = width * 2 / 6
                                                         BarcodeFormat.CODE_128
                                                     }
@@ -182,7 +185,13 @@ class MainActivity : AppCompatActivity() {
                                         }
                                         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                                         bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
-                                        imageView.setImageBitmap(bitmap)
+                                        val dstBitmap =
+                                                if (position == 2 && w != h) {
+                                                    Bitmap.createScaledBitmap(bitmap, width, (width.toFloat() * (h.toFloat() / w.toFloat())).toInt(), false)
+                                                } else {
+                                                    Bitmap.createScaledBitmap(bitmap, width, height, false)
+                                                }
+                                        imageView.setImageBitmap(dstBitmap)
                                     } catch (e: Exception) {
                                         Log.e("", "", e)
                                     }

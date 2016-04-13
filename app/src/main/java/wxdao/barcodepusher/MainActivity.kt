@@ -1,14 +1,19 @@
 package wxdao.barcodepusher
 
+import android.Manifest
 import android.app.ProgressDialog
 import android.content.*
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
+import android.support.v4.app.ActivityCompat
 import android.support.v7.app.AlertDialog
 import android.support.v7.app.AppCompatActivity
 import android.text.Editable
@@ -26,6 +31,7 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.integration.android.IntentIntegrator
 import okhttp3.*
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.*
 
@@ -118,7 +124,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         listView?.setOnItemLongClickListener { adapterView, view, i, l ->
-            AlertDialog.Builder(this).setTitle("Actions").setItems(arrayListOf("Push / Re-push", "Delete", "Share").toTypedArray(), object : DialogInterface.OnClickListener {
+            AlertDialog.Builder(this).setTitle("Actions").setItems(arrayOf("Push / Re-push", "Delete", "Share"), object : DialogInterface.OnClickListener {
                 override fun onClick(dialog: DialogInterface?, which: Int) {
                     when (which) {
                         0 -> {
@@ -140,6 +146,27 @@ class MainActivity : AppCompatActivity() {
                             val content = (view.findViewById(R.id.item_contentTextView) as TextView).text.toString()
                             textView.text = content
                             imageView.contentDescription = content
+                            imageView.isLongClickable = true
+                            imageView.setOnLongClickListener { view ->
+                                if (view is ImageView) {
+                                    try {
+                                        verifyStoragePermissions()
+                                        val bitmap = (view.drawable as BitmapDrawable).bitmap
+                                        val root = File(Environment.getExternalStorageDirectory(), "barcode_share")
+                                        root.mkdirs()
+                                        val file = File(root, (System.currentTimeMillis()).toString() + ".png")
+                                        val stream = FileOutputStream(file)
+                                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                                        stream.flush()
+                                        stream.close()
+                                        Toast.makeText(this@MainActivity, "Image saved to " + file.absolutePath, Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
+                                        Log.e("", "", e)
+                                    }
+                                }
+                                true
+                            }
 
                             val codeTypes = listOf("QR Code", "Aztec", "Data Matrix", "PDF 417", "Code 128")
                             val adapter = ArrayAdapter<String>(this@MainActivity, android.R.layout.simple_spinner_item, codeTypes)
@@ -196,6 +223,7 @@ class MainActivity : AppCompatActivity() {
                                                 }
                                         imageView.setImageBitmap(dstBitmap)
                                     } catch (e: Exception) {
+                                        Toast.makeText(this@MainActivity, "ERROR", Toast.LENGTH_SHORT).show()
                                         Log.e("", "", e)
                                     }
                                 }
@@ -402,5 +430,12 @@ class MainActivity : AppCompatActivity() {
         }
         val adapter = SimpleAdapter(this, list, R.layout.history_list_item, listOf<String>("remote", "content", "date", "uuid").toTypedArray(), listOf<Int>(R.id.item_remoteTextView, R.id.item_contentTextView, R.id.item_dateTextView, R.id.item_uuidTextView).toIntArray())
         listView?.adapter = adapter
+    }
+
+    fun verifyStoragePermissions() {
+        val permission = ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        if (permission != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+        }
     }
 }

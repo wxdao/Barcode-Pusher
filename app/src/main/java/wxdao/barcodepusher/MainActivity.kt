@@ -214,7 +214,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        remoteEdit?.setText(sharedPref!!.getString("remote", ""))
+        remoteEdit!!.setText(sharedPref!!.getString("remote", ""))
+        remoteEdit!!.setSelection(remoteEdit!!.text.length)
 
         updateHistory()
     }
@@ -259,6 +260,7 @@ class MainActivity : AppCompatActivity() {
             val input = EditText(this)
             input.inputType = (InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
             input.setText(sharedPref!!.getString("additional", ""))
+            input.setSelection(input.text.length)
 
             val dialogBuilder = AlertDialog.Builder(this).setTitle("Additional Information")
             dialogBuilder.setCancelable(false)

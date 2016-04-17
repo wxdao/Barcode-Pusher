@@ -129,11 +129,7 @@ class MainActivity : AppCompatActivity() {
                         pushData(remoteEdit!!.text.toString(), (view.findViewById(R.id.item_contentTextView) as TextView).text.toString(), true)
                     }
                     1 -> {
-                        AlertDialog.Builder(this@MainActivity).setMessage("Push?").setPositiveButton("Yes", { dialogInterface, i ->
-                            deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), true)
-                        }).setNegativeButton("No", { dialogInterface, i ->
-                            deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), false)
-                        }).show()
+                        deleteData((view.findViewById(R.id.item_uuidTextView) as TextView).text.toString(), remoteEdit!!.text.toString(), (findViewById(R.id.checkBox) as CheckBox).isChecked)
                     }
                     2 -> {
                         val shareView = layoutInflater.inflate(R.layout.share_layout, null)
